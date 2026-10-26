@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>展示用ループ動画</title>
+    <style>
+        /* 余白を消し、背景を真っ黒にして映像と馴染ませる設定 */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: black;
+            overflow: hidden; /* スクロールバーを完全に隠す */
+            cursor: none; /* マウスカーソルも非表示にする */
+        }
+        /* 動画を画面いっぱいに広げる設定 */
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain; /* 画面比率に合わせて全体を表示 */
+        }
+    </style>
+</head>
+<body>
+    <!-- autoplay(自動再生) loop(ループ) muted(無音設定※自動再生に必須) -->
+    <video src="loop.mp4" autoplay loop muted playsinline></video>
+</body>
+</html>

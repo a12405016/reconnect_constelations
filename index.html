@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>双子座インタラクティブ絵本＆星座修復</title>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Noto+Serif:wght@400;700&display=swap"
+        rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js"
+        crossorigin="anonymous"></script>
+    <style>
+        :root {
+            --ink: #3b2a14;
+            --ink-soft: #5a4426;
+            --gold: #d4af37;
+            --pap1: #ead9a6;
+            --pap2: #d2b878;
+            --pap-edge: #8a6a32;
+            --meander: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M2 22V2h20v16H8V8h8v6' fill='none' stroke='%237a5a2a' stroke-width='2'/%3E%3C/svg%3E");
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        html,
+        body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #000;
+            color: #f0f0f0;
+            font-family: 'Noto Serif JP', 'Noto Serif', serif
+        }
+
+        .screen {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1s ease-in-out
+        }
+
+        .screen.on {
+            opacity: 1;
+            pointer-events: auto
+        }
+
+        #story {
+            z-index: 10;
+            background: #000
+        }
+
+        #final {
+            z-index: 40;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 0 4vw;
+            background: radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%);
+            overflow: hidden
+        }
+
+        /* ===== 絵本：画像は100% ===== */
+        #bg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: opacity .5s
+        }
+
+        /* 両端のパピルス帯（不透明・全高）：文字はここだけに置き、イラストの中央は空ける */
+        .side {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            z-index: 3;
+            display: flex;
+            width: clamp(270px, 23vw, 420px);
+            background:
+                repeating-linear-gradient(0deg, rgba(120, 90, 40, .09) 0 2px, transparent 2px 5px),
+                repeating-linear-gradient(90deg, rgba(120, 90, 40, .06) 0 1px, transparent 1px 7px),
+                linear-gradient(135deg, #f1e4b8, #dcc489);
+            box-shadow: 0 0 30px rgba(0, 0, 0, .7)
+        }
+
+        .side.l {
+            left: 0;
+            border-right: 4px solid var(--pap-edge)
+        }
+
+        .side.r {
+            right: 0;
+            border-left: 4px solid var(--pap-edge);
+            flex-direction: row-reverse
+        }
+
+        .strip {
+            flex: none;
+            width: 62px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            background: rgba(120, 90, 40, .14)
+        }
+
+        .l .strip {
+            border-right: 2px solid rgba(138, 106, 50, .5)
+        }
+
+        .r .strip {
+            border-left: 2px solid rgba(138, 106, 50, .5);
+            flex-direction: row-reverse
+        }
+
+        .strip::before {
+            content: "";
+            width: 22px;
+            height: 100%;
+            background: var(--meander) center/22px 24px repeat-y;
+            opacity: .85
+        }
+
+        .greek {
+            writing-mode: vertical-rl;
+            font-family: 'Noto Serif', serif;
+            font-weight: 700;
+            font-size: 19px;
+            letter-spacing: .35em;
+            color: var(--ink-soft)
+        }
+
+        .body {
+            flex: 1;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 44px 20px;
+            color: var(--ink);
+            transition: opacity .5s
+        }
+
+        .body::before,
+        .body::after {
+            content: "";
+            position: absolute;
+            left: 14px;
+            right: 14px;
+            height: 24px;
+            background: var(--meander) 0 center/24px 24px repeat-x;
+            opacity: .8
+        }
+
+        .body::before {
+            top: 12px
+        }
+
+        .body::after {
+            bottom: 12px
+        }
+
+        .label {
+            text-align: center;
+            font-family: 'Noto Serif', serif;
+            font-weight: 700;
+            letter-spacing: .3em;
+            color: var(--pap-edge);
+            font-size: clamp(.8rem, 1.1vw, 1.1rem);
+            margin-bottom: .9em
+        }
+
+        .txt {
+            font-size: clamp(1.05rem, 1.55vw, 1.6rem);
+            line-height: 1.95;
+            font-weight: 700;
+            text-align: justify;
+            margin: 0;
+            color: #2a1c0a
+        }
+
+        .txt.sub {
+            font-weight: 400
+        }
+
+        .txt.orn {
+            text-align: center;
+            font-size: 3rem;
+            color: var(--pap-edge);
+            line-height: 1.4
+        }
+
+        .hint {
+            position: absolute;
+            left: 50%;
+            bottom: 150px;
+            transform: translateX(-50%);
+            z-index: 5;
+            white-space: nowrap;
+            background: rgba(0, 0, 0, .6);
+            padding: 8px 18px;
+            border-radius: 999px;
+            font-size: 14px;
+            backdrop-filter: blur(6px)
+        }
+
+        /* ===== UI ===== */
+        .ui {
+            transition: opacity .4s
+        }
+
+        .final .ui {
+            opacity: 0;
+            pointer-events: none
+        }
+
+        #topbar {
+            position: fixed;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 50;
+            display: flex;
+            gap: 10px;
+            align-items: center
+        }
+
+        .pill {
+            padding: 8px 16px;
+            border-radius: 999px;
+            background: rgba(20, 20, 20, .7);
+            border: 1px solid #666;
+            color: #fff;
+            font: inherit;
+            font-size: 13px;
+            backdrop-filter: blur(6px)
+        }
+
+        button.pill {
+            cursor: pointer
+        }
+
+        #detected {
+            border-color: #4aa3ff;
+            background: rgba(10, 40, 90, .85);
+            opacity: 0;
+            transition: opacity .25s;
+            font-weight: 700
+        }
+
+        #detected.on {
+            opacity: 1
+        }
+
+        #cam {
+            position: fixed;
+            bottom: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 50;
+            width: 160px
+        }
+
+        #cam .box {
+            height: 120px;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 2px solid rgba(255, 255, 255, .35);
+            background: #000;
+            position: relative
+        }
+
+        #cam video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1)
+        }
+
+        #cam .st {
+            position: absolute;
+            left: 6px;
+            top: 6px;
+            font-size: 11px;
+            background: rgba(0, 0, 0, .65);
+            padding: 2px 8px;
+            border-radius: 99px
+        }
+
+        #bar {
+            height: 6px;
+            margin-top: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, .2);
+            overflow: hidden
+        }
+
+        #bar i {
+            display: block;
+            height: 100%;
+            width: 0;
+            background: var(--gold)
+        }
+
+        #camerr {
+            position: fixed;
+            left: 50%;
+            bottom: 150px;
+            transform: translateX(-50%);
+            z-index: 60;
+            display: none;
+            background: #7a1f1f;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px
+        }
+
+        /* ===== 待機画面 ===== */
+        #intro {
+            z-index: 30;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            overflow: hidden;
+            background: radial-gradient(ellipse at 50% 110%, #1d2b45 0%, #090a0f 70%)
+        }
+
+        #intro .stars {
+            animation-duration: 90s
+        }
+
+        #intro svg {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: min(78vw, 120vh);
+            transform: translate(-50%, -52%);
+            opacity: .7;
+            pointer-events: none
+        }
+
+        .cl {
+            stroke: #e9d48a;
+            stroke-width: 2;
+            fill: none;
+            opacity: .75
+        }
+
+        .gap {
+            stroke-dasharray: 5 9;
+            animation: gap 2.4s ease-in-out infinite alternate
+        }
+
+        @keyframes gap {
+            from {
+                opacity: .15
+            }
+
+            to {
+                opacity: .95
+            }
+        }
+
+        .st {
+            fill: #fff;
+            filter: drop-shadow(0 0 6px #fff)
+        }
+
+        .st.big {
+            fill: #fde9a0;
+            filter: drop-shadow(0 0 14px #f0e68c);
+            animation: tw 3s ease-in-out infinite alternate
+        }
+
+        @keyframes tw {
+            from {
+                opacity: .65
+            }
+
+            to {
+                opacity: 1
+            }
+        }
+
+        .intro-in {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0 5vw
+        }
+
+        .rule {
+            width: min(520px, 70vw);
+            height: 24px;
+            background: var(--meander) center/24px 24px repeat-x;
+            opacity: .7;
+            filter: brightness(1.9) sepia(.6)
+        }
+
+        .title {
+            font-family: 'Noto Serif', serif;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.05;
+            margin: .35em 0 .25em;
+            letter-spacing: .06em;
+            font-size: clamp(2.6rem, 7.2vw, 7rem);
+            text-shadow: 0 0 14px #fff, 0 0 40px #f0e68c, 0 0 80px #f0e68c
+        }
+
+        .sub-t {
+            margin: 0 0 2.2em;
+            font-size: clamp(1rem, 1.7vw, 1.6rem);
+            letter-spacing: .35em;
+            color: #e6d9a8
+        }
+
+        .wave {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+            background: rgba(0, 0, 0, .45);
+            border: 1px solid #6b5a2a;
+            border-radius: 999px;
+            padding: 14px 34px;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 0 30px rgba(240, 230, 140, .25)
+        }
+
+        .wave .hand {
+            font-size: clamp(2.2rem, 4vw, 3.6rem);
+            display: inline-block;
+            transform-origin: 70% 80%;
+            animation: sway 1.4s ease-in-out infinite
+        }
+
+        @keyframes sway {
+
+            0%,
+            100% {
+                transform: rotate(-22deg) translateX(-10px)
+            }
+
+            50% {
+                transform: rotate(22deg) translateX(10px)
+            }
+        }
+
+        .wave b {
+            font-size: clamp(1.3rem, 2.6vw, 2.4rem);
+            color: #fff;
+            text-shadow: 0 0 12px #87cefa
+        }
+
+        .wave small {
+            display: block;
+            font-size: clamp(.8rem, 1.1vw, 1rem);
+            color: #c9d3ea;
+            margin-top: 2px;
+            font-weight: 400
+        }
+
+        @media (prefers-reduced-motion:reduce) {
+
+            .wave .hand,
+            .gap,
+            .st.big {
+                animation: none
+            }
+        }
+
+        /* ===== 最終シーン ===== */
+        .stars {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1px;
+            height: 1px;
+            background: transparent;
+            animation: up 50s linear infinite;
+            box-shadow: 1744px 122px #FFF, 134px 1321px #FFF, 92px 876px #FFF, 1222px 141px #FFF, 1888px 1211px #FFF, 734px 111px #FFF, 144px 222px #FFF, 888px 1311px #FFF, 111px 444px #FFF, 1999px 888px #FFF, 234px 555px #FFF, 777px 222px #FFF, 1333px 999px #FFF, 1555px 333px #FFF, 666px 1444px #FFF, 400px 500px #FFF, 800px 700px #FFF, 1200px 300px #FFF, 1600px 900px #FFF, 200px 1000px #FFF
+        }
+
+        @keyframes up {
+            to {
+                transform: translateY(-1200px)
+            }
+        }
+
+        .glow {
+            color: #fff;
+            font-weight: 700;
+            line-height: 1.4;
+            font-size: clamp(2rem, 4.6vw, 4.4rem);
+            margin: 0 0 .8em;
+            text-shadow: 0 0 10px #fff, 0 0 30px #f0e68c, 0 0 60px #f0e68c
+        }
+
+        .box2 {
+            background: rgba(0, 0, 0, .4);
+            border: 1px solid #1a3a7a;
+            padding: clamp(20px, 3vw, 48px);
+            border-radius: 20px;
+            box-shadow: 0 0 40px rgba(30, 144, 255, .3);
+            backdrop-filter: blur(8px)
+        }
+
+        .box2 p {
+            margin: 0;
+            font-weight: 700;
+            font-size: clamp(1.3rem, 2.6vw, 2.4rem);
+            line-height: 1.7;
+            color: #e6eefc;
+            text-shadow: 0 0 10px #87cefa
+        }
+
+        .arrow {
+            font-size: 3rem;
+            margin-top: .6em;
+            animation: fl 2s ease-in-out infinite
+        }
+
+        @keyframes fl {
+            50% {
+                transform: translateX(20px)
+            }
+        }
+
+        .count {
+            position: relative;
+            z-index: 2;
+            margin-top: 28px;
+            font-size: 1rem;
+            color: #aab8d8
+        }
+
+        @media (max-width:800px) {
+            .side {
+                width: 40vw;
+                min-width: 0
+            }
+
+            .strip {
+                width: 40px
+            }
+
+            .strip::before {
+                width: 12px;
+                background-size: 12px 24px
+            }
+
+            .greek {
+                font-size: 12px
+            }
+
+            .body {
+                padding: 40px 10px
+            }
+        }
+
+        @media (prefers-reduced-motion:reduce) {
+
+            .stars,
+            .arrow {
+                animation: none
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- 操作UI -->
+    <div id="topbar" class="ui">
+        <button class="pill" onclick="nextScene()">▶ 次へ（テスト用 / →キー）</button>
+        <div id="detected" class="pill">✋ スワイプを検知しました！</div>
+    </div>
+    <div id="cam" class="ui">
+        <div class="box"><video id="video" autoplay playsinline muted></video><span class="st" id="hand">手: なし</span>
+        </div>
+        <div id="bar"><i id="barfill"></i></div>
+    </div>
+    <div id="camerr"></div>
+
+    <!-- 待機画面 -->
+    <div id="intro" class="screen on">
+        <div class="stars"></div>
+        <svg viewBox="0 0 800 500" aria-hidden="true">
+            <polyline class="cl" points="300,90 285,200 250,310 210,400" />
+            <polyline class="cl" points="420,110 430,210 410,320 380,420" />
+            <line class="cl gap" x1="285" y1="200" x2="430" y2="210" />
+            <line class="cl gap" x1="250" y1="310" x2="410" y2="320" />
+            <circle class="st big" cx="300" cy="90" r="8" />
+            <circle class="st big" cx="420" cy="110" r="9" />
+            <circle class="st" cx="285" cy="200" r="4" />
+            <circle class="st" cx="430" cy="210" r="4" />
+            <circle class="st" cx="250" cy="310" r="4" />
+            <circle class="st" cx="410" cy="320" r="4" />
+            <circle class="st" cx="210" cy="400" r="5" />
+            <circle class="st" cx="380" cy="420" r="5" />
+        </svg>
+        <div class="intro-in">
+            <div class="rule"></div>
+            <h1 class="title">Reconnect<br>Constellations</h1>
+            <p class="sub-t">双子座の物語</p>
+            <div class="wave"><span class="hand">👋</span>
+                <b>カメラに向かって手を振ってはじめよう<small>Wave your hand to begin</small></b>
+            </div>
+            <div class="rule" style="margin-top:2.2em"></div>
+        </div>
+    </div>
+
+    <!-- 絵本シーン -->
+    <div id="story" class="screen">
+        <img id="bg" alt="" src="01.png"
+            onerror="this.onerror=null;this.src='https://placehold.co/1600x900/1a1a1a/e0e0e0?text=Image+Not+Found'">
+
+        <div class="side l">
+            <div class="strip"><span class="greek">ΔΙΟΣΚΟΥΡΟΙ</span></div>
+            <div class="body" id="ltxt">
+                <div class="label">ΚΑΣΤΩΡ · <span id="num">1</span></div>
+                <p class="txt" id="main"></p>
+            </div>
+        </div>
+
+        <div class="side r">
+            <div class="strip"><span class="greek">ΔΙΔΥΜΟΙ</span></div>
+            <div class="body" id="rtxt">
+                <div class="label">ΠΟΛΥΔΕΥΚΗΣ</div>
+                <p class="txt sub" id="sub"></p>
+            </div>
+        </div>
+
+        <div class="hint ui">👋 カメラに向かって、手を右から左へ動かすと物語が進みます</div>
+    </div>
+
+    <!-- 最終シーン -->
+    <div id="final" class="screen">
+        <div class="stars"></div>
+        <div style="position:relative;z-index:2;max-width:1100px">
+            <div style="font-size:4rem;color:#fde68a;opacity:.85;margin-bottom:.4em">✧</div>
+            <h1 class="glow">あなたは二人を一緒にいさせるために<br>星座を修復させよう！</h1>
+            <div class="box2">
+                <p>次の部屋に進み、<br>台の上にある両端の下に手を合わせてください。</p>
+                <div class="arrow">➔</div>
+            </div>
+        </div>
+        <div class="count"><span id="count">5</span> 秒後に最初に戻ります</div>
+    </div>
+
+    <script>
+        /* ========== 設定 ========== */
+        const SWIPE_DIR = 1;     // 来館者から見て「右→左」= カメラ映像のx増加。逆に反応する場合は -1 に
+        const SWIPE_DIST = 0.20;  // 必要な移動量（画面幅比）。反応しにくければ小さく
+        const SWIPE_WINDOW = 800;   // この時間(ms)以内の動きを判定
+        const COOLDOWN = 1800;  // 一度反応したら次の検知まで待つ時間(ms)
+        const INTRO_DIST = 0.15;  // 待機画面で「手を振った」とみなす移動量（左右どちらでも）
+        const RESET_SEC = 5;     // 最終画面から最初に戻るまでの秒数
+
+        /* ========== ストーリー ========== */
+        const story = [
+            { img: "01.png", main: "昔々、大神ゼウスと人間の王妃の間に双子が生まれました。", sub: "" },
+            { img: "02.png", main: "やがてその双子は、カストルとポルックスと名付けられ、二人はとても仲の良い兄弟として成長していきました。", sub: "二人はいつも一緒で離れることなくお互いを高め合っていました。" },
+            { img: "03.png", main: "カストルは武術を高め、知識に恵まれました。一方ポルックスは、圧倒的な怪力をもち、拳闘の達人となりました。", sub: "二人の絆はいくつもの冒険や至難を乗り越え行くたびに深くなっていきました。" },
+            { img: "04.png", main: "ある日、二人は不当な扱いにあったために敵と戦うことになりました。", sub: "" },
+            { img: "05.png", main: "しかし、相手の攻撃によって兄であるカストルは胸を射られ命を落としてしまう。", sub: "兄であるカストルが戦場で息絶えたために、弟のポルックスは深く嘆き悲しんでしまう。" },
+            { img: "06.png", main: "カストルは人間の血をひいており、ポルックスは神の血を引いていました。そのため、弟は不死身として死ぬことができませんでした。", sub: "必死になって兄の亡骸を抱きしめてポルックスは神ゼウスに「一緒にいたい」と懇願した。" }
+        ];
+        story.forEach(s => { const i = new Image(); i.src = s.img; }); // 先読み
+
+        const $ = id => document.getElementById(id);
+        let idx = 0, busy = false, inIntro = true, inFinal = false, cooldownUntil = 0, countTimer = null;
+        const fadeEls = () => [$('bg'), $('ltxt'), $('rtxt')];
+
+        function setScene(i) {
+            const d = story[i];
+            $('bg').src = d.img;
+            $('main').innerHTML = d.main;
+            $('sub').innerHTML = d.sub || '✧';
+            $('sub').className = 'txt sub' + (d.sub ? '' : ' orn');
+            $('num').textContent = i + 1;
+        }
+        function paintVisible(i) {
+            $('bg').style.opacity = 1;
+            $('ltxt').style.opacity = 1;
+            $('rtxt').style.opacity = 1;   // サブ文がない場面は飾りだけ表示
+        }
+        function showScene(i) {
+            busy = true;
+            fadeEls().forEach(e => e.style.opacity = 0);
+            setTimeout(() => { setScene(i); paintVisible(i); busy = false; }, 500);
+        }
+
+        function startStory() {
+            busy = true; inIntro = false;
+            idx = 0; setScene(0); paintVisible(0);
+            $('intro').classList.remove('on');
+            $('story').classList.add('on');
+            trail.length = 0;
+            setTimeout(() => { busy = false; cooldownUntil = performance.now() + COOLDOWN; }, 1000);
+        }
+
+        function nextScene() {
+            if (inIntro) { if (!busy) startStory(); return; }
+            if (busy || inFinal) return;
+            cooldownUntil = performance.now() + COOLDOWN;
+            trail.length = 0;
+            idx++;
+            if (idx < story.length) showScene(idx); else showFinal();
+        }
+
+        /* ========== 最終画面 → 5秒後に自動で最初へ ========== */
+        function showFinal() {
+            inFinal = true; busy = true;
+            document.body.classList.add('final');
+            $('story').classList.remove('on');
+            setTimeout(() => {
+                $('final').classList.add('on');
+                let s = RESET_SEC;
+                $('count').textContent = s;
+                clearInterval(countTimer);
+                countTimer = setInterval(() => {
+                    s--; $('count').textContent = Math.max(s, 0);
+                    if (s <= 0) { clearInterval(countTimer); resetStory(); }
+                }, 1000);
+            }, 1000);
+        }
+        function resetStory() {
+            $('final').classList.remove('on');
+            idx = 0;
+            setScene(0); paintVisible(0);
+            setTimeout(() => {
+                $('intro').classList.add('on');          // 最初は待機画面に戻る
+                document.body.classList.remove('final');
+                trail.length = 0;
+                cooldownUntil = performance.now() + COOLDOWN;
+                inFinal = false; inIntro = true; busy = false;
+            }, 1000);
+        }
+
+        document.addEventListener('keydown', e => {
+            if (['ArrowRight', 'ArrowLeft', ' ', 'Enter'].includes(e.key)) nextScene();
+        });
+        setScene(0); paintVisible(0);
+
+        /* ========== 手のスワイプ検知（右→左） ========== */
+        const trail = [];            // {t, x} の履歴
+        let indTimer = null, lastSeen = 0;
+
+        function setHand(on) { $('hand').textContent = on ? '手: 検出中' : '手: なし'; if (!on) $('barfill').style.width = '0'; }
+        function flash() {
+            $('detected').classList.add('on');
+            clearTimeout(indTimer);
+            indTimer = setTimeout(() => $('detected').classList.remove('on'), 1500);
+        }
+
+        function onResults(res) {
+            const now = performance.now();
+            const hands = res.multiHandLandmarks;
+            if (!hands || !hands.length) {
+                if (now - lastSeen > 300) { trail.length = 0; setHand(false); }
+                return;
+            }
+            lastSeen = now;
+            setHand(true);
+            if (busy || inFinal || now < cooldownUntil) { trail.length = 0; return; }
+
+            // 手のひら中心（手首と各指の付け根の平均）のx座標
+            const lm = hands[0];
+            const x = (lm[0].x + lm[5].x + lm[9].x + lm[13].x + lm[17].x) / 5;
+
+            trail.push({ t: now, x });
+            while (trail.length && now - trail[0].t > SWIPE_WINDOW) trail.shift();
+
+            // 時間窓内で、現在位置までに進んだ最大距離（指定方向）
+            let best = 0;
+            for (const p of trail) best = Math.max(best, inIntro ? Math.abs(x - p.x) : (x - p.x) * SWIPE_DIR);
+            const need = inIntro ? INTRO_DIST : SWIPE_DIST;
+            $('barfill').style.width = Math.min(100, best / need * 100) + '%';
+
+            if (best >= need) {
+                flash();
+                nextScene();
+            }
+        }
+
+        /* ========== MediaPipe 初期化 ========== */
+        const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}` });
+        hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+        hands.onResults(onResults);
+
+        const camera = new Camera($('video'), {
+            onFrame: async () => { await hands.send({ image: $('video') }); },
+            width: 640, height: 480
+        });
+        camera.start().catch(err => {
+            const e = $('camerr');
+            e.style.display = 'block';
+            e.textContent = 'カメラを起動できません。https または localhost で開き、カメラを許可してください。（→キーでも操作できます）';
+            console.error(err);
+        });
+    </script>
+</body>
+
+</html>
