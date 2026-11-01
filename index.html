@@ -190,7 +190,7 @@
         }
 
         .txt.sub {
-            font-weight: 400
+            font-weight: 700
         }
 
         .txt.orn {
@@ -250,6 +250,18 @@
             cursor: pointer
         }
 
+        #testbtn {
+            display: none
+        }
+
+        .debug #testbtn {
+            display: inline-block
+        }
+
+        body:not(.debug) {
+            cursor: none
+        }
+
         #detected {
             border-color: #4aa3ff;
             background: rgba(10, 40, 90, .85);
@@ -287,7 +299,7 @@
             transform: scaleX(-1)
         }
 
-        #cam .st {
+        #cam .camst {
             position: absolute;
             left: 6px;
             top: 6px;
@@ -586,11 +598,11 @@
 
     <!-- 操作UI -->
     <div id="topbar" class="ui">
-        <button class="pill" onclick="nextScene()">▶ 次へ（テスト用 / →キー）</button>
+        <button class="pill" id="testbtn" onclick="nextScene()">▶ 次へ（テスト用 / →キー）</button>
         <div id="detected" class="pill">✋ スワイプを検知しました！</div>
     </div>
     <div id="cam" class="ui">
-        <div class="box"><video id="video" autoplay playsinline muted></video><span class="st" id="hand">手: なし</span>
+        <div class="box"><video id="video" autoplay playsinline muted></video><span class="camst" id="hand">手: なし</span>
         </div>
         <div id="bar"><i id="barfill"></i></div>
     </div>
@@ -600,18 +612,30 @@
     <div id="intro" class="screen on">
         <div class="stars"></div>
         <svg viewBox="0 0 800 500" aria-hidden="true">
-            <polyline class="cl" points="300,90 285,200 250,310 210,400" />
-            <polyline class="cl" points="420,110 430,210 410,320 380,420" />
-            <line class="cl gap" x1="285" y1="200" x2="430" y2="210" />
-            <line class="cl gap" x1="250" y1="310" x2="410" y2="320" />
-            <circle class="st big" cx="300" cy="90" r="8" />
-            <circle class="st big" cx="420" cy="110" r="9" />
-            <circle class="st" cx="285" cy="200" r="4" />
-            <circle class="st" cx="430" cy="210" r="4" />
-            <circle class="st" cx="250" cy="310" r="4" />
-            <circle class="st" cx="410" cy="320" r="4" />
-            <circle class="st" cx="210" cy="400" r="5" />
-            <circle class="st" cx="380" cy="420" r="5" />
+            <!-- 双子座の星座線・星の位置: d3-celestial (BSD-3-Clause) のデータより。カストル/ポルックスを結ぶ線が点滅 -->
+            <line class="cl" x1="629.4" y1="247.7" x2="588.3" y2="247.5" />
+            <line class="cl" x1="588.3" y1="247.5" x2="481.7" y2="189.9" />
+            <line class="cl" x1="481.7" y1="189.9" x2="343.4" y2="77.4" />
+            <line class="cl" x1="343.4" y1="77.4" x2="224.1" y2="41.3" />
+            <line class="cl gap" x1="224.1" y1="41.3" x2="169.6" y2="126.2" />
+            <line class="cl" x1="169.6" y1="126.2" x2="217.3" y2="151.1" />
+            <line class="cl" x1="217.3" y1="151.1" x2="297.7" y2="259.2" />
+            <line class="cl" x1="297.7" y1="259.2" x2="379.1" y2="290.3" />
+            <line class="cl" x1="379.1" y1="290.3" x2="513.3" y2="382.0" />
+            <line class="cl" x1="513.3" y1="382.0" x2="474.8" y2="459.1" />
+            <line class="cl" x1="297.7" y1="259.2" x2="308.0" y2="378.9" />
+            <circle class="st big" cx="169.6" cy="126.2" r="8.2" />
+            <circle class="st big" cx="224.1" cy="41.3" r="7.5" />
+            <circle class="st big" cx="513.3" cy="382.0" r="7.0" />
+            <circle class="st" cx="588.3" cy="247.5" r="5.6" />
+            <circle class="st" cx="481.7" cy="189.9" r="5.3" />
+            <circle class="st" cx="629.4" cy="247.7" r="4.9" />
+            <circle class="st" cx="474.8" cy="459.1" r="4.9" />
+            <circle class="st" cx="297.7" cy="259.2" r="4.6" />
+            <circle class="st" cx="308.0" cy="378.9" r="4.5" />
+            <circle class="st" cx="379.1" cy="290.3" r="3.9" />
+            <circle class="st" cx="217.3" cy="151.1" r="3.8" />
+            <circle class="st" cx="343.4" cy="77.4" r="3.3" />
         </svg>
         <div class="intro-in">
             <div class="rule"></div>
@@ -669,6 +693,7 @@
         const SWIPE_WINDOW = 800;   // この時間(ms)以内の動きを判定
         const COOLDOWN = 1800;  // 一度反応したら次の検知まで待つ時間(ms)
         const INTRO_DIST = 0.15;  // 待機画面で「手を振った」とみなす移動量（左右どちらでも）
+        const IDLE_SEC = 60;  // 最後に画面が進んでから、この秒数が過ぎたら表紙(待機画面)へ戻る（誤反応対策）
         const RESET_SEC = 5;     // 最終画面から最初に戻るまでの秒数
 
         /* ========== ストーリー ========== */
@@ -683,7 +708,8 @@
         story.forEach(s => { const i = new Image(); i.src = s.img; }); // 先読み
 
         const $ = id => document.getElementById(id);
-        let idx = 0, busy = false, inIntro = true, inFinal = false, cooldownUntil = 0, countTimer = null;
+        let idx = 0, busy = false, inIntro = true, inFinal = false, cooldownUntil = 0, countTimer = null, lastActive = performance.now();
+        if (new URLSearchParams(location.search).has('debug')) document.body.classList.add('debug'); // ?debug でテストボタン表示
         const fadeEls = () => [$('bg'), $('ltxt'), $('rtxt')];
 
         function setScene(i) {
@@ -706,7 +732,7 @@
         }
 
         function startStory() {
-            busy = true; inIntro = false;
+            busy = true; inIntro = false; lastActive = performance.now();
             idx = 0; setScene(0); paintVisible(0);
             $('intro').classList.remove('on');
             $('story').classList.add('on');
@@ -718,6 +744,7 @@
             if (inIntro) { if (!busy) startStory(); return; }
             if (busy || inFinal) return;
             cooldownUntil = performance.now() + COOLDOWN;
+            lastActive = performance.now();
             trail.length = 0;
             idx++;
             if (idx < story.length) showScene(idx); else showFinal();
@@ -752,7 +779,25 @@
             }, 1000);
         }
 
+        function abortToIntro() {
+            busy = true;
+            $('story').classList.remove('on');
+            setTimeout(() => {
+                idx = 0; setScene(0); paintVisible(0);
+                $('intro').classList.add('on');
+                trail.length = 0; cooldownUntil = performance.now() + COOLDOWN;
+                inIntro = true; busy = false;
+            }, 1000);
+        }
+        setInterval(() => {
+            if (!inIntro && !inFinal && !busy && performance.now() - lastActive > IDLE_SEC * 1000) abortToIntro();
+        }, 2000);
+
         document.addEventListener('keydown', e => {
+            if (e.key === 'f' || e.key === 'F') {   // Fキーで全画面
+                document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+                return;
+            }
             if (['ArrowRight', 'ArrowLeft', ' ', 'Enter'].includes(e.key)) nextScene();
         });
         setScene(0); paintVisible(0);
